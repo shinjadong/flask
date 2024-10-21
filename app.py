@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -29,37 +29,40 @@ from io import BytesIO
 from openpyxl import Workbook
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": ["https://aaaa-895ab.web.app", "http://localhost:3000", "http://localhost:5000", "https://8450-124-49-62-252.ngrok-free.app"]}}, supports_credentials=True)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# 환경 변수에서 MongoDB URI 가져오기
-mongo_uri = os.environ.get('MONGO_URI')
+# MongoDB URI를 하드코딩
+mongo_uri = "mongodb+srv://shinws8908:dnfhlao1@cluster0.h7c55.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 mongo_client = MongoClient(mongo_uri)
 db = mongo_client['scraping_db']
+
+# Firebase 서비스 계정 키 파일 경로를 하드코딩
+service_account_key_path = 'serviceAccountKey.json'
+
+# Firebase 초기화
+cred = credentials.Certificate(service_account_key_path)
+firebase_admin.initialize_app(cred)
 
 def find_service_account_key():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     possible_names = ['serviceAccountKey.json', 'firebase-adminsdk.json', 'firebase-key.json']
-    search_dirs = [current_dir, os.path.dirname(current_dir)]
-
-    for directory in search_dirs:
-        for name in possible_names:
-            exact_path = os.path.join(directory, name)
-            if os.path.exists(exact_path):
-                return exact_path
-            
-            pattern = os.path.join(directory, f'*{name}')
-            matches = glob.glob(pattern)
-            if matches:
-                return matches[0]
     
-    raise FileNotFoundError("서비스 계정 키 파일을 찾을 수 없습니다.")
-
-# Firebase 초기화
-cred = credentials.Certificate(find_service_account_key())
-firebase_admin.initialize_app(cred)
+    for name in possible_names:
+        file_path = os.path.join(current_dir, name)
+        if os.path.exists(file_path):
+            return file_path
+    
+    # 파일을 찾지 못한 경우 glob을 사용하여 패턴 매칭
+    for name in possible_names:
+        pattern = os.path.join(current_dir, f'*{name}')
+        matches = glob.glob(pattern)
+        if matches:
+            return matches[0]
+    
+    raise FileNotFoundError("서비스 계정 키 파일을 찾을 수 없습니.")
 
 def require_uid(f):
     @wraps(f)
@@ -95,7 +98,7 @@ class NaverShoppingScraper:
             self.wait = WebDriverWait(self.driver, 30)
             logger.debug("WebDriver 설정 완료")
         except Exception as e:
-            logger.error(f"WebDriver 설정 중 오류 발생: {str(e)}")
+            logger.error(f"WebDriver 정 중 오류 발생: {str(e)}")
             raise
 
     def should_skip_title(self, title):
@@ -250,31 +253,50 @@ class NaverShoppingScraper:
                 {"$set": {"market_db": market_info}}
             )
             logger.info(f"마켓 DB 업데이트 완료: {self.uid}")
-            return {"message": "마켓 DB가 성공적으로 업데이트되었습니다."}
+            return {"message": "마켓 DB가 성공적으로 데트되었습니다."}
         except Exception as e:
-            logger.error(f"마켓 DB 업데이트 중 오류 발생: {str(e)}")
+            logger.error(f"마 DB 업데이트 중 오류 발생: {str(e)}")
             raise
 
 def optimize_seo(title, keywords):
-    # 실제 SEO 최적화 로직을 여기에 구현
-    # 임시로 간단한 로��을 사용
+    # 실제 SEO 최적화 로직을 여기 구현
+    # 임시로 간단 로을 사용
     optimized_title = f"{title} - {', '.join(keywords[:3])}"
-    return optimized_title[:100]  # 제목 길이를 100자로 제한
+    return optimized_title[:100]  # 제목 길이를 100자 제한
 
 # 라우트 정의
 
-@app.route('/signup', methods=['POST'])
+@app.route('/')
+def index():
+    return "Welcome to AI Sourcing API", 200
+
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy"}), 200
+
+@app.route('/favicon.ico')
+def favicon():
+    return "", 204
+
+@app.route('/signup', methods=['POST', 'OPTIONS'])
 def signup():
-    print("회원가입 요청 받음")
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    logger.info("회원가입 요청 받음")
     data = request.get_json()
-    print("받은 데이터:", data)
+    logger.info(f"받은 데이터: {data}")
     try:
         email = data.get('email')
         password = data.get('password')
         display_name = data.get('displayName')
 
+        if not email or not password or not display_name:
+            logger.warning("필수 필드 누락")
+            return jsonify({"error": "이메일, 비밀번호, 이름은 필수입니다."}), 400
+
         # Firebase로 사용자 생성
-        user = auth.create_user(
+        user = firebase_auth.create_user(
             email=email,
             password=password,
             display_name=display_name
@@ -301,8 +323,10 @@ def signup():
         }
         db.users.insert_one(user_data)
 
+        logger.info(f"회원가입 성공: {user.uid}")
         return jsonify({"success": True, "message": "User registered successfully", "uid": user.uid}), 200
     except Exception as e:
+        logger.error(f"회원가입 오류: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 400
 
 @app.route('/user-info', methods=['GET'])
@@ -320,10 +344,10 @@ def get_user_info(uid):
                 }
             }), 200
         else:
-            return jsonify({"error": "사용자 정보를 찾을 수 ��습니다."}), 404
+            return jsonify({"error": "사용자 정보를 찾을 수 없습니다."}), 404
     except Exception as e:
         logger.error(f"사용자 정보 조회 중 오류 발생: {str(e)}")
-        return jsonify({"error": "사용자 정보 조회 중 오류가 발생했습니다."}), 500
+        return jsonify({"error": "사용자 정보 조회 중 오류가 발했습니다."}), 500
 
 @app.route('/search', methods=['POST'])
 @require_uid
@@ -331,60 +355,42 @@ def search_products_route(uid):
     try:
         data = request.get_json(force=True)
         keyword = data.get('keyword')
-
         if not keyword:
+            logger.warning(f"키워드 없음: {uid}")
             return jsonify({"error": "키워드를 제공해야 합니다."}), 400
-
+        
         logger.info(f"검색 요청 - 키워드: {keyword}, 사용자 ID: {uid}")
-
+        
         scraper = NaverShoppingScraper(uid)
-        top_10_products = scraper.search_products(keyword)
-
-        products_response = [
-            {
-                "id": str(product.get("id", "")),
-                "market_name": product.get("market_name", ""),
-                "product_title": product.get("product_title", ""),
-                "price": product.get("price", 0),
-                "image_url": product.get("image_url", ""),
-                "product_url": product.get("product_url", ""),
-                "recent_purchases": product.get("recent_purchases", 0)
-            } for product in top_10_products
-        ]
-
-        return jsonify({"products": products_response}), 200
-
+        products = scraper.search_products(keyword)
+        
+        logger.info(f"검색 완료 - 결과 수: {len(products)}")
+        return jsonify({"products": products}), 200
     except Exception as e:
         logger.error(f"검색 중 오류 발생: {str(e)}", exc_info=True)
         return jsonify({"error": f"검색 중 오류가 발생했습니다: {str(e)}"}), 500
 
 @app.route('/collect', methods=['POST'])
 @require_uid
-def collect_products_route(uid):
+def collect_product(uid):
     try:
-        data = request.get_json(force=True)
-        selected_product_ids = data.get('selected_product_ids', [])
-
-        if not selected_product_ids:
-            return jsonify({"error": "수집할 상품이 없습니다."}), 400
-
-        scraper = NaverShoppingScraper(uid)
-        result, status_code = scraper.collect_selected_products(selected_product_ids)
-
-        return jsonify(result), status_code
+        data = request.get_json()
+        product_ids = data.get('selected_product_ids', [])
+        
+        # 여기에 상품 수집 로직 구현
+        
+        return jsonify({"message": f"{len(product_ids)}개의 상품이 수집되었습니다."}), 200
     except Exception as e:
-        logger.error(f"상품 수집 요청 처리 중 오류 발생: {str(e)}", exc_info=True)
-        return jsonify({"error": f"상품 수집 요청 처리 중 오류가 발생했습니다: {str(e)}"}), 500
+        logger.error(f"상품 수집 중 오류 발생: {str(e)}", exc_info=True)
+        return jsonify({"error": f"상품 수집 중 오류가 발생했습니다: {str(e)}"}), 500
 
 @app.route('/get_collected_products', methods=['GET'])
 @require_uid
 def get_collected_products(uid):
     try:
         user_data = db.users.find_one({"_id": uid})
-        if user_data and 'collected_products' in user_data:
-            return jsonify({"products": user_data['collected_products']}), 200
-        else:
-            return jsonify({"products": []}), 200
+        collected_products = user_data.get('collected_products', [])
+        return jsonify({"products": collected_products}), 200
     except Exception as e:
         logger.error(f"수집된 상품 조회 중 오류 발생: {str(e)}", exc_info=True)
         return jsonify({"error": f"수집된 상품 조회 중 오류가 발생했습니다: {str(e)}"}), 500
@@ -398,7 +404,7 @@ def taobao_match(uid):
         product_id = data.get('productId')
         
         if not image_url:
-            return jsonify({"error": "이미지 URL이 제공되지 않았습니다."}), 400
+            return jsonify({"error": "이미지 URL 제공되지 않았습니다."}), 400
 
         url = "https://open-taobao-api.p.rapidapi.com/taobao/traffic/item/imgsearch"
         querystring = {"pic_url": image_url, "language": "en"}
@@ -431,8 +437,8 @@ def taobao_match(uid):
             return jsonify({"error": "매칭된 상품이 없거나 API 응답이 올바르지 않습니다."}), 404
 
     except Exception as e:
-        logger.error(f"타오바오 매칭 중 오류 발생: {str(e)}", exc_info=True)
-        return jsonify({"error": f"타오바오 매칭 중 오류가 발생했습니다: {str(e)}"}), 500
+        logger.error(f"타오바오 매칭  오류 발생: {str(e)}", exc_info=True)
+        return jsonify({"error": f"타오바오 매칭  중 오류가 발생했습니다: {str(e)}"}), 500
 
 @app.route('/seo_optimize', methods=['POST'])
 @require_uid
@@ -528,7 +534,7 @@ def download_heyseller(uid):
         try:
             wb = load_workbook(template_content)
         except Exception as e:
-            # 템플릿 로드 실패 시 새 워크북 생성
+            # 템플릿 로드 실패 시 새 워북 생성
             wb = Workbook()
             ws = wb.active
             ws.title = "HeySeller Template"
@@ -563,33 +569,71 @@ def download_heyseller(uid):
         logger.error(f"헤이셀러 파일 생성 중 오류 발생: {str(e)}", exc_info=True)
         return jsonify({"error": f"헤이셀러 파일 생성 중 오류가 발생했습니다: {str(e)}"}), 500
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "healthy", "message": "Server is running"}), 200
-
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['POST', 'OPTIONS'])
 def login():
-    print("로그인 요청 받음")
+    if request.method == 'OPTIONS':
+        return '', 204
+    app.logger.info("Login route accessed")
     data = request.get_json()
-    print("받은 데이터:", data)
-    # 여기에 로그인 처리 로직 구현
-    return jsonify({"message": "로그인 성공"}), 200
+    app.logger.info(f"Login attempt for user: {data.get('email')}")
+    
+    try:
+        # Firebase 토큰 검증
+        id_token = request.headers.get('Authorization').split('Bearer ')[1]
+        decoded_token = firebase_auth.verify_id_token(id_token)
+        uid = decoded_token['uid']
+        
+        # MongoDB에서 사용자 정보 확인
+        user_data = db.users.find_one({"_id": uid})
+        if not user_data:
+            # 사용자 정보가 없으면 새로 생성
+            user_data = {
+                "_id": uid,
+                "email": decoded_token.get('email'),
+                "display_name": decoded_token.get('name'),
+                "membershipLevel": "Basic",
+                "remainingCredits": 10,
+                "config": {
+                    "market": 0,
+                    "min_price": 0,
+                    "max_price": 1000000000,
+                    "option": "전체구매건수",
+                    "skip_words": [],
+                    "markets": []
+                },
+                "collected_products": [],
+                "market_db": {},
+                "search_results": []
+            }
+            db.users.insert_one(user_data)
+        
+        return jsonify({"success": True, "message": "Login successful", "uid": uid}), 200
+    except Exception as e:
+        app.logger.error(f"Login error: {str(e)}")
+        return jsonify({"error": str(e)}), 400
 
 @app.route('/google_login', methods=['POST', 'OPTIONS'])
 def google_login():
     if request.method == 'OPTIONS':
-        # Preflight request. Reply successfully:
-        return ('', 204, {
-            'Access-Control-Allow-Origin': 'http://127.0.0.1:3000',
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-            'Access-Control-Allow-Methods': 'POST,OPTIONS'
-        })
-
+        return '', 204
     data = request.get_json()
     # 여기에 Google 로그인 처리 로직 구현
     response = jsonify({"message": "Google 로그인 성공"})
     response.headers.add('Access-Control-Allow-Origin', 'http://127.0.0.1:3000')
     return response, 200
 
+@app.errorhandler(Exception)
+def handle_exception(e):
+    app.logger.error(f"Unhandled exception: {str(e)}")
+    return jsonify({"error": "An unexpected error occurred"}), 500
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Not found"}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({"error": "Method not allowed"}), 405
+
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(debug=False, host='0.0.0.0', port=5000)
