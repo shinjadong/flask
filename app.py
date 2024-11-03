@@ -1,5 +1,6 @@
 # app.py
 
+import sys
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from selenium import webdriver
@@ -39,11 +40,26 @@ import io
 from flask import send_file
 from urllib.parse import quote
 import random
+from dotenv import load_dotenv
 
+# Flask 환경 변수 설정을 비활성화
+cli = sys.modules['flask.cli']
+cli.load_dotenv = lambda *args, **kwargs: None
+
+# Flask 앱 초기화 전에 환경변수 직접 설정
+os.environ['FLASK_ENV'] = 'development'
+os.environ['FLASK_DEBUG'] = 'True'
+os.environ['FLASK_PORT'] = '5000'
+os.environ['FLASK_HOST'] = '0.0.0.0'
 
 # Flask 앱 초기화
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+# 필요한 환경변수들을 직접 설정
+os.environ['FLASK_DEBUG'] = 'True'
+os.environ['FLASK_PORT'] = '5000'
+os.environ['FLASK_HOST'] = '0.0.0.0'
 
 # MongoDB 연결 정보 수정
 uri = "mongodb+srv://shinws8908:dnfhlao1@cluster0.h7c55.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -313,7 +329,7 @@ class NaverShoppingScraper:
                     logger.error(f"{market_name} 마켓 스크래핑 중 오류 발생: {str(e)}")
                     continue
 
-            # 상위 10개 상품만 선택
+            # ���위 10개 상품만 선택
             top_10_products = all_products[:10]
             logger.info(f"상위 10개 상품 추출 완료: {len(top_10_products)}개")
 
@@ -712,7 +728,7 @@ def login():
 
     except Exception as e:
         logger.error(f"로그인 중 오류 발생: {str(e)}")
-        return jsonify({"error": "로그인 중 오류가 발생했습니다."}), 500
+        return jsonify({"error": "로그인 중 오류가 발생했��니다."}), 500
 
 @app.route('/generate_seo', methods=['POST'])
 def generate_seo():
@@ -903,7 +919,7 @@ def batch_taobao_match():
         product_ids = data.get('productIds', [])
         
         if not uid or not product_ids:
-            return jsonify({"error": "사용자 ID와 매칭할 상품 ID가 필요합니다."}), 400
+            return jsonify({"error": "사용자 ID와 ���칭할 상품 ID가 필요합니다."}), 400
 
         user = db.users.find_one({"_id": uid})
         if not user:
@@ -1111,7 +1127,7 @@ def download_heyseller():
             sheet.cell(row=idx, column=1, value=product.get('category', ''))  # A열: 카테고리
             
             seo_title = product.get('seo_title', product['product_title'])
-            sheet.cell(row=idx, column=2, value=seo_title)  # B열: SEO 상품명
+            sheet.cell(row=idx, column=2, value=seo_title)  # B열: SEO ��품명
             
             sheet.cell(row=idx, column=3, value=len(seo_title.encode('utf-8')))  # C열: 글자수(Byte)
             
@@ -1147,8 +1163,12 @@ def download_heyseller():
 
     except Exception as e:
         logger.error(f"헤이셀러 다운로드 중 오류 발생: {str(e)}")
-        return jsonify({"error": f"헤이셀러 다운로드 중 오�� 발생했습니다: {str(e)}"}), 500
+        return jsonify({"error": f"헤이셀러 다운로드 중 오류 발생했습니다: {str(e)}"}), 500
 
 # Flask 애플리케이션 실행
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    debug = True  # 직접 debug 설정
+    port = 5000  # 직접 port 설정
+    host = '0.0.0.0'  # 직접 host 설정
+    
+    app.run(debug=debug, host=host, port=port)
